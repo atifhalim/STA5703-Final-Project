@@ -1,0 +1,323 @@
+
+
+Clean up date and use VIF measure to eliminate multicollinearity
+
+
+```{r, warning=FALSE, message=FALSE}
+rm(list = ls())
+library(ggplot2)
+library(gridExtra)
+
+train <- read.table("train.imputed.csv", sep=",", header=TRUE)
+test <- read.table("test.imputed.csv", sep=",", header=TRUE)
+
+train$X <- NULL
+test$X <- NULL
+```
+Separate categorical, continous and discrete variables
+
+Contrary to the suggested separation of the variables, it seems reasonable to use the variables Medical_History_2  and Medical_History_10 as continuous.
+
+```{r}
+
+#emp.info.var.names <- c(paste("Employment_Info_", c(1:6), sep = ""))
+#prod.info.var.names <- c(paste("Product_Info_", c(1:7), sep = ""))`
+#ins.info.var.names <- c(paste("InsuredInfo_", c(1:7), sep = ""))
+#ins.hist.var.names <- c(paste("Insurance_History_", c(1:7), sep = ""))
+#family.hist.var.names <- c(paste("Family_Hist_", c(1:5), sep = ""))
+#medical.hist.var.names <- c(paste("Medical_History_", c(1:41), sep = ""))
+#medical.key.var.names <- c(paste("Medical_Keyword_", c(1:48), sep = ""))
+
+
+cat.var.names <- c(paste("Product_Info_", c(1:3,5:7), sep=""), paste("Employment_Info_", c(2,3,5), sep=""),
+                   paste("InsuredInfo_", 1:7, sep=""), paste("Insurance_History_", c(1:4,7:9), sep=""), 
+                   "Family_Hist_1", paste("Medical_History_", c(3:9, 11:14, 16:23, 25:31, 33:41), sep=""))
+
+cont.var.names <- c("Product_Info_4", "Ins_Age", "Ht", "Wt", "BMI", "Employment_Info_1", "Employment_Info_4", 
+                    "Employment_Info_6", "Insurance_History_5", "Family_Hist_2", "Family_Hist_3", "Family_Hist_4", 
+                    "Family_Hist_5")
+
+disc.var.names <- c("Medical_History_1", "Medical_History_2", "Medical_History_15", paste("Medical_Keyword_", 1:48, sep=""))
+
+train.cat <- train[, cat.var.names]
+test.cat <- test[, cat.var.names]
+
+train.cont <- train[, cont.var.names]
+train.cont$Response <- train$Response
+test.cont <- test[, cont.var.names]
+
+train.disc <- train[, disc.var.names]
+train.disc$Response <- train$Response
+test.disc <- test[, disc.var.names]
+
+train.cat <- as.data.frame(lapply(train.cat, factor))
+train.cat$Response <- train$Response
+test.cat <- as.data.frame(lapply(test.cat, factor))
+
+```
+
+
+In the above structure commands we saw missing data, how much is it?
+
+```{r}
+sum(is.na(train)) / (nrow(train) * ncol(train))
+sum(is.na(test)) / (nrow(test) * ncol(test))
+
+apply(train, 2, function(x) { sum(is.na(x)) })
+apply(test, 2, function(x) { sum(is.na(x)) })
+
+```
+
+Can we see any different missing data structure depending on the response?
+
+```{r}
+options(max.print = 100000)
+train.na.per.response <- sapply(sort(unique(train$Response)), function(x) { apply(train[train$Response == x, ], 2, function(y) { sum(is.na(y)) }) })
+train.na.per.response
+round(colSums(train.na.per.response) / sum(train.na.per.response), digits=4)
+
+```
+
+Are there any duplicate rows?
+
+```{r}
+cat("Train data set - Number of duplicated rows:", nrow(train) - nrow(unique(train)), "\n")
+cat("Test data set - Number of duplicated rows:", nrow(test) - nrow(unique(test)), "\n")
+
+```
+
+Are there any constant columns?
+
+```{r}
+train.const <- sapply(train, function(x) { length(unique(x)) == 1 })
+test.const <- sapply(test, function(x) { length(unique(x)) == 1 })
+cat("Train data set - Number of constant columns:", sum(train.const), "\n")
+cat("Test data set - Number of constant columns:", sum(test.const), "\n")
+```
+
+Plot histograms of categorical variables
+
+```{r}
+
+train.cat$Product_Info_2 <- relevel(train.cat$Product_Info_2, ref = "D3")
+train.cat$Product_Info_3 <- relevel(train.cat$Product_Info_3, ref = "26")
+train.cat$Employment_Info_2 <- relevel(train.cat$Employment_Info_2, ref = "9")
+train.cat$InsuredInfo_3 <- relevel(train.cat$InsuredInfo_3, ref = "8")
+train.cat$Insurance_History_3 <- relevel(train.cat$Insurance_History_3, ref = "3")
+train.cat$Insurance_History_8 <- relevel(train.cat$Insurance_History_8, ref = "2")
+train.cat$Insurance_History_9 <- relevel(train.cat$Insurance_History_8, ref = "2")
+train.cat$Family_Hist_1 <- relevel(train.cat$Family_Hist_1, ref = "3")
+train.cat$Medical_History_3 <- relevel(train.cat$Medical_History_3, ref = "2")
+train.cat$Medical_History_6 <- relevel(train.cat$Medical_History_6, ref = "3")
+train.cat$Medical_History_7 <- relevel(train.cat$Medical_History_7, ref = "2")
+train.cat$Medical_History_8 <- relevel(train.cat$Medical_History_8, ref = "2")
+train.cat$Medical_History_9 <- relevel(train.cat$Medical_History_9, ref = "2")
+train.cat$Medical_History_11 <- relevel(train.cat$Medical_History_11, ref = "3")
+train.cat$Medical_History_12 <- relevel(train.cat$Medical_History_12, ref = "2")
+train.cat$Medical_History_13 <- relevel(train.cat$Medical_History_13, ref = "3")
+train.cat$Medical_History_14 <- relevel(train.cat$Medical_History_14, ref = "3")
+train.cat$Medical_History_17 <- relevel(train.cat$Medical_History_17, ref = "3")
+train.cat$Medical_History_23 <- relevel(train.cat$Medical_History_23, ref = "3")
+train.cat$Medical_History_26 <- relevel(train.cat$Medical_History_26, ref = "3")
+train.cat$Medical_History_27 <- relevel(train.cat$Medical_History_27, ref = "3")
+train.cat$Medical_History_29 <- relevel(train.cat$Medical_History_29, ref = "3")
+train.cat$Medical_History_30 <- relevel(train.cat$Medical_History_30, ref = "2")
+train.cat$Medical_History_31 <- relevel(train.cat$Medical_History_31, ref = "3")
+train.cat$Medical_History_34 <- relevel(train.cat$Medical_History_34, ref = "3")
+train.cat$Medical_History_36 <- relevel(train.cat$Medical_History_36, ref = "2")
+train.cat$Medical_History_37 <- relevel(train.cat$Medical_History_37, ref = "2")
+train.cat$Medical_History_39 <- relevel(train.cat$Medical_History_39, ref = "3")
+train.cat$Medical_History_40 <- relevel(train.cat$Medical_History_40, ref = "3")
+
+for (i in c(1:ncol(train.cat))){
+  
+  plot <- ggplot(data = train.cat, mapping = aes(x=train.cat[,i], fill = as.factor(train.cat$Response))) + geom_histogram(stat = "count") + xlab(colnames(train.cat)[i]) + theme_light() + theme(axis.text.x=element_text(size=8))
+  
+  print(plot)
+}
+
+
+```
+
+Densities of continous Features
+
+```{r, warning=FALSE}
+
+for (i in c(1:ncol(train.disc))){
+#for (i in c(1:1)){
+  
+  plot <- ggplot(data = train.disc, mapping = aes(x=train.disc[,i], fill = as.factor(train.disc$Response))) + geom_bar() + xlab(colnames(train.disc)[i]) + theme_light() + theme(axis.text.x=element_text(size=8)) 
+  
+  print(plot)
+}
+
+#train.cont <- data.frame(train.cont, Response=train$Response)
+#plotDensity <- function(data.in, i) {
+#  data <- data.frame(x=data.in[,i], Response=data.in$Response)
+#  p <- ggplot(data) + #geom_density(aes(x=x, colour=factor(Response))) + 
+#    geom_line(aes(x=x), stat="density", size=1, alpha=1.0) +
+#    xlab(colnames(data.in)[i]) + theme_light()
+#  return (p)
+#}
+
+#doPlots(data.in=train.cont, fun=plotDensity, ii=1:4, ncol=2)
+#doPlots(data.in=train.cont, fun=plotDensity, ii=5:8, ncol=2)
+#doPlots(data.in=train.cont, fun=plotDensity, ii=9:12, ncol=2)
+#doPlots(data.in=train.cont, fun=plotDensity, ii=13, ncol=2)
+
+```
+
+```{r}
+for (i in c(1:ncol(train.cont))){
+#for (i in c(1:1)){
+  
+  plot <- ggplot(data = train.cont, mapping = aes(x=train.cont[,i], fill = as.factor(train.cont$Response))) + geom_density() + xlab(colnames(train.cont)[i]) + theme_light() + theme(axis.text.x=element_text(size=8)) 
+  
+  print(plot)
+}
+
+```
+
+
+Boxplots of continous Features depending on Response
+
+```{r, warning=FALSE}
+
+for (i in c(1:ncol(train.cont))){
+
+plot <- ggplot(data = train.cont, mapping = aes(x=as.factor(train.cont$Response), y=train.cont[,i])) + geom_boxplot() + xlab(colnames(train.cont)[i]) + theme_light() + theme(axis.text.x=element_text(size=8)) 
+print(plot)
+}
+
+
+#plotBox <- function(data.in, i) {
+#  data <- data.frame(y=data.in[,i], Response=data.in$Response)
+#  p <- ggplot(data, aes(x=factor(Response), y=y)) + geom_boxplot() + ylab(colnames(data.in)[i]) + theme_light()
+#  return (p)
+#}
+
+#doPlots(data.in=train.cont, fun=plotBox, ii=1:4, ncol=2)
+#doPlots(data.in=train.cont, fun=plotBox, ii=5:8, ncol=2)
+#doPlots(data.in=train.cont, fun=plotBox, ii=9:12, ncol=2)
+#doPlots(data.in=train.cont, fun=plotBox, ii=13, ncol=2)
+
+```
+
+
+
+```{r}
+# height cannot be zero.  remove the record
+train.cat <- train.cat[train$Ht!=0,]
+train.cont <- train.cont[train$Ht!=0,]
+train.disc <- train.disc[train$Ht!=0,]
+train <- train[train$Ht!=0,]
+
+#remove Product_Info_4 records thgat are greater than 0.5??
+
+#remove wt = 0
+train.cat <- train.cat[train$Wt!=0,]
+train.cont <- train.cont[train$Wt!=0,]
+train.disc <- train.disc[train$Wt!=0,]
+train <- train[train$Wt!=0,]
+
+#remove BMI = 0
+train.cat <- train.cat[train$BMI!=0,]
+train.cont <- train.cont[train$BMI!=0,]
+train.disc <- train.disc[train$BMI!=0,]
+train <- train[train$BMI!=0,]
+
+#remove Insurance_History_5 < 0.4
+train.cat <- train.cat[train$Insurance_History_5<0.4,]
+train.cont <- train.cont[train$Insurance_History_5<0.4,]
+train.disc <- train.disc[train$Insurance_History_5<0.4,]
+train <- train[train$Insurance_History_5<0.4,]
+
+#remove Family_Hist_4 = 0
+train.cat <- train.cat[train$Family_Hist_4 != 0,]
+train.cont <- train.cont[train$Family_Hist_4 != 0,]
+train.disc <- train.disc[train$Family_Hist_4 != 0,]
+train <- train[train$Family_Hist_4 != 0,]
+
+#remove Family_Hist_4 > 0.93
+train.cat <- train.cat[train$Family_Hist_4 <= 0.93,]
+train.cont <- train.cont[train$Family_Hist_4 <= 0.93,]
+train.disc <- train.disc[train$Family_Hist_4 <= 0.93,]
+train <- train[train$Family_Hist_4 <= 0.93,]
+
+#remove Family_Hist_5 > 0.75
+train.cat <- train.cat[train$Family_Hist_4 <= 0.75,]
+train.cont <- train.cont[train$Family_Hist_4 <= 0.75,]
+train.disc <- train.disc[train$Family_Hist_4 <= 0.75,]
+train <- train[train$Family_Hist_4 <= 0.75,]
+
+```
+
+There is an extreme situation, called multicollinearity, where collinearity exists between three or more variables even if no pair of variables has a particularly high correlation. This means that there is redundancy between predictor variables.
+
+In the presence of multicollinearity, the solution of the regression model becomes unstable.
+
+For a given predictor (p), multicollinearity can assessed by computing a score called the variance inflation factor (or VIF), which measures how much the variance of a regression coefficient is inflated due to multicollinearity in the model.
+
+The smallest possible value of VIF is one (absence of multicollinearity). As a rule of thumb, a VIF value that exceeds 5 or 10 indicates a problematic amount of collinearity (James et al. 2014).
+
+When faced to multicollinearity, the concerned variables should be removed, since the presence of multicollinearity implies that the information that this variable provides about the response is redundant in the presence of the other variables (James et al. 2014,P. Bruce and Bruce (2017)).
+
+So long as the underlying specification is correct, multicollinearity does not actually bias results; it just produces large standard errors in the related independent variables. More importantly, the usual use of regression is to take coefficients from the model and then apply them to other data. Since multicollinearity causes imprecise estimates of coefficient values, the resulting out-of-sample predictions will also be imprecise. And if the pattern of multicollinearity in the new data differs from that in the data that was fitted, such extrapolation may introduce large errors in the predictions
+
+
+The Variance Inflating Factor (VIF) tells you how much higher the variance of the estimated coefficients is when predictors are correlated compared to when they are uncorrelated.  VIF greater than five is considered too high.  
+
+```{r}
+
+library(car)
+print('VIF test for All vars')
+impData = train
+vif(lm(Response ~ . , data=impData))
+
+
+print('VIF test for All vars - Exclude Wt')
+impData = subset(impData,select=-c(Wt))
+vif(lm(Response ~ .,data=impData))
+
+
+print('VIF test for All vars - Exclude Medical_Keyword_48')
+impData = subset(impData,select=-c(Medical_Keyword_48))
+vif(lm(Response ~ .,data=impData))
+
+```
+
+```{r}
+print('VIF test for All vars - Exclude Insurance_History_3')
+impData = subset(impData,select=-c(Insurance_History_3))
+vif(lm(Response ~ .,data=impData))
+
+
+```
+
+
+```{r}
+
+print('VIF test for All vars - Exclude Medical_Keyword_23')
+impData = subset(impData,select=-c(Medical_Keyword_23))
+vif(lm(Response ~ .,data=impData))
+```
+
+```{r}
+print('VIF test for All vars - Exclude Medical_History_26')
+impData = subset(impData,select=-c(Medical_History_26))
+vif(lm(Response ~ .,data=impData))
+
+```
+
+```{r}
+ 
+print('VIF test for All vars - Exclude Insurance_History_9')
+impData = subset(impData,select=-c(Insurance_History_9))
+vif(lm(Response ~ .,data=impData))
+```
+
+```{r}
+write.csv(impData, "train.final.csv")
+```
+
+

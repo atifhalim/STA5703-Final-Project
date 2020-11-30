@@ -1,0 +1,107 @@
+
+```{r}
+rm(list = ls())
+ds.t <- read.csv("train.final.csv")
+ds.v <- read.csv("test.final.csv")
+
+#ds.t$Product_Info_2 <- as.integer(ds.t$Product_Info_2)
+
+```
+
+
+```{r}
+f.FLAG <- as.formula("Response~.")
+library(rpart)
+library(rpart.plot)
+set.seed(1234)
+tree <- rpart(formula = f.FLAG,
+              data = ds.t,
+              method = "class",
+              parms = list(split = 'gini'),
+              control = rpart.control(minisplit = 3, cp=0.002, maxdepth = 20))
+
+rpart.plot(tree)
+
+pred <- predict(tree, type = "class")
+confusionMatrix(pred, as.factor(ds.t$Response))
+
+pred <- predict(tree, type = "class", newdata = ds.v)
+
+
+```
+
+
+```{r}
+tree.prune <- prune(tree, cp=0.01)
+rpart.plot(tree.prune, type=5, cex=0.6)
+
+pred <- predict(tree.prune, type = "class")
+confusionMatrix(pred, as.factor(ds.t$Response))
+```
+
+```{r}
+
+library(xgboost)
+
+feature.names <- names(ds.t)[2:(ncol(ds.t)-1)]
+
+cat("assuming text variables are categorical & replacing them with numeric ids\n")
+for (f in feature.names) {
+  if (class(ds.t[[f]])=="character") {
+    levels <- unique(c(ds.t[[f]], ds.v[[f]]))
+    ds.t[[f]] <- as.integer(factor(ds.t[[f]], levels=levels))
+    ds.v[[f]]  <- as.integer(factor(ds.v[[f]],  levels=levels))
+  }
+}
+
+cat("training a XGBoost classifier\n")
+clf <- xgboost(data        = data.matrix(ds.t[,feature.names]),
+               label       = ds.t$Response,
+               nrounds     = 100,
+               objective   = "reg:linear",
+               eval_metric = "rmse")
+
+pred <- as.integer(predict(clf, data.matrix(ds.v[,feature.names])))
+pred <- ifelse(pred>8,8,pred)
+pred <- ifelse(pred<1,1,pred)
+
+RMSE <- sqrt(sum((pred-ds.v$Response)^2)/nrow(ds.v))
+RMSE
+```
+
+```{r}
+#set the grid for tuning the parameter
+library(caret)
+library(randomForest)
+rfGrid <- expand.grid(mtry = c(2,4,6,8,10))
+
+#set the control parameters
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 5, 
+                     repeats = 3) # We want to do 5-fold cross validation (repeated 3 times for robustness)
+  #No need to do up or down sampling here   
+
+#train the model
+rf.tuned <- train(Response ~.,
+                        data = ds.t, 
+                        method = "rf", # This is so we use the randomForest algorithm
+                        trControl = ctrl,
+                        tuneGrid = rfGrid,
+                        importance = TRUE
+                        )
+#See the results
+rf.tuned
+ggplot(rf.tuned)
+
+library(pROC)
+
+predictions <- predict(rf.tuned) 
+
+# Evaluate performance via AUC
+auc(as.numeric(ds.t$Response), as.numeric(predictions))
+
+#Get feature importance
+imp <- varImp(rf.tuned)
+plot(imp)
+```
+
